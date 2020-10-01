@@ -57,7 +57,7 @@ public class PricesUpdateService {
 		PricesUpdateService.pricesRepository = pricesRepository;
 	}
 
-	//@Scheduled(cron="${prices.update.service.schedule}")
+	@Scheduled(cron="${prices.update.service.schedule}")
 	public void run() {
 
 		Long startTime = (long) 0;

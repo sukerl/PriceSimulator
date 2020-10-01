@@ -2,6 +2,7 @@ package li.test.services;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,7 +47,7 @@ public class OrderService {
 		OrderService.pricesRepository = pricesRepository;
 	}
 
-	@Scheduled(cron="${prices.update.service.schedule}")
+	@Scheduled(cron="${orders.update.service.schedule}")
 	public void run() {
 
 		Symbol symbol = symbolsRepository.findBySymbol(symbolName);
@@ -61,15 +62,21 @@ public class OrderService {
 
 				if (ordersRepository.countBySymbolAndParameter(symbol, parameter)>0) {
 					
-					//Timestamp currentPriceTime = ordersRepository.findMinOrderTimeOpenOrdersBySymbolAndParameter(symbol, parameter);
+					// Startzeit festlegen, ab der gestartet werden soll.
+					// Wenn schon Einträge vorhanden sind, beim letzten OpenOrder beginnen, sonst bei der Startzeit aus dem Parameter-Objekt 
+					Timestamp startTime;
+					Timestamp latestOrderPriceTime = ordersRepository.findMaxOrderTimeOpenOrdersBySymbolAndParameter(symbol, parameter);
+					if (latestOrderPriceTime!=null) {
+						startTime = latestOrderPriceTime;
+					} else {
+						startTime = parameter.getStartTime();
+					}
 
-					//while(currentPriceTime.getTime()<latestPriceTime.getTime()) {
-					ArrayList<Price> allPrices = pricesRepository.getAllPricesBySymbolAndStartTime(symbol, parameter.getStartTime());
+					// Alle Preise in eine ArrayList laden (schneller als jedes Mal die DB abzufragen)
+					ArrayList<Price> allPrices = pricesRepository.getAllPricesBySymbolAndStartTime(symbol, startTime);
 					for (Price currentPrice : allPrices) {
 
 						// TODO: Wenn Summe Profit kleiner als Anfangsbudget, Schleife beenden.
-
-						//Price currentPrice = pricesRepository.findByPriceTime(currentPriceTime);
 
 						if (currentPrice!=null) {
 
@@ -77,9 +84,11 @@ public class OrderService {
 
 							ArrayList<Order> openOrders = ordersRepository.findOpenOrdersBySymbolAndParameter(symbol, parameter);
 
+							// Werte festlegen, mit denen der momentane Kurs multipliziert werden muss um die Grenzwerte zu ermitteln.
 							BigDecimal desiredMultiplier = ((new BigDecimal(100).add(parameter.getFeesPercentage())).add(parameter.getDesiredGainPercentage())).divide(new BigDecimal(100));
 							BigDecimal stopLossMultiplier = ((new BigDecimal(100).subtract(parameter.getFeesPercentage())).subtract(parameter.getStopLossTriggerPercentage())).divide(new BigDecimal(100));
 
+							// Alle offenen Orders überprüfen, ob sie abgeschlossen werden können.
 							for (Order openOrder : openOrders) {
 
 								// Wenn gewünschter Verlaufspreis erreicht wurde, Order abschliessen (Mit AVG-Preis berechnet)
@@ -91,7 +100,6 @@ public class OrderService {
 								if((openOrder.getOrderPrice().multiply(stopLossMultiplier)).compareTo(currentPrice.getLowPrice())==1) {
 									closeOrderLow(openOrder, currentPrice);
 								}
-
 							}
 
 							// Wenn die Höchstzahl an laufeneden Orders noch nicht erreicht ist
@@ -112,10 +120,7 @@ public class OrderService {
 								}
 							}		
 						}
-
-						//currentPriceTime = new Timestamp(currentPriceTime.getTime()+60000);
 					}
-
 				} else {
 
 					Price firstPrice = pricesRepository.findByPriceTime(parameter.getStartTime());
@@ -131,7 +136,6 @@ public class OrderService {
 
 				}				
 			}
-
 		}
 	}
 
